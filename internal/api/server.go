@@ -12,20 +12,21 @@ import (
 )
 
 type RelayStats struct {
-	Connected   bool   `json:"connected"`
-	SentBytes   uint64 `json:"sentBytes"`
-	RecvBytes   uint64 `json:"recvBytes"`
-	ConnectedAt string `json:"connectedAt,omitempty"`
-	ClientIP    string `json:"clientIP,omitempty"`
-	GatewayIP   string `json:"gatewayIP,omitempty"`
-	PhoneMAC    string `json:"phoneMAC,omitempty"`
+	Connected     bool   `json:"connected"`
+	InterfaceName string `json:"interfaceName,omitempty"`
+	SentBytes     uint64 `json:"sentBytes"`
+	RecvBytes     uint64 `json:"recvBytes"`
+	ConnectedAt   string `json:"connectedAt,omitempty"`
+	ClientIP      string `json:"clientIP,omitempty"`
+	GatewayIP     string `json:"gatewayIP,omitempty"`
+	PhoneMAC      string `json:"phoneMAC,omitempty"`
 }
 
 type DaemonStatus struct {
-	Running  bool        `json:"running"`
-	Active   bool        `json:"active"`
-	Relay    *RelayStats `json:"relay,omitempty"`
-	Uptime   string      `json:"uptime,omitempty"`
+	Running bool        `json:"running"`
+	Active  bool        `json:"active"`
+	Relay   *RelayStats `json:"relay,omitempty"`
+	Uptime  string      `json:"uptime,omitempty"`
 }
 
 type StatusProvider interface {

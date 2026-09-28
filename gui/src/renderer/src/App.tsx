@@ -54,6 +54,13 @@ export function App() {
 
         <TrafficStats relay={status.relay} />
 
+        <div className="w-full max-w-xs flex items-center justify-between px-4 text-[11px] text-zinc-500">
+          <span>Virtual adapter</span>
+          <span className="font-mono text-zinc-300">
+            {connected ? status.relay?.interfaceName || 'Connecting…' : 'Not connected'}
+          </span>
+        </div>
+
         {connected && status.relay?.clientIP && (
           <div className="flex items-center gap-2 mt-1">
             <svg viewBox="0 0 24 24" className="w-3 h-3 text-zinc-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

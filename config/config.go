@@ -52,6 +52,9 @@ type DHCPConfig struct {
 type RouteConfig struct {
 	SetDefaultRoute bool `toml:"set_default_route"`
 	RouteMetric     int  `toml:"route_metric"`
+	// InterfaceOnly leaves routing and DNS policy to another network manager
+	// (for example Surge Enhanced Mode). The utun still has a scoped route.
+	InterfaceOnly bool `toml:"interface_only"`
 }
 
 type LoggingConfig struct {
@@ -62,7 +65,7 @@ type LoggingConfig struct {
 // Default paths for BetterTether config files on macOS.
 var DefaultConfigPaths = []string{
 	"/etc/bettertether/bettertether.toml",
-	"/usr/local/etc/bettertether/bettertether.toml", // Intel Homebrew
+	"/usr/local/etc/bettertether/bettertether.toml",    // Intel Homebrew
 	"/opt/homebrew/etc/bettertether/bettertether.toml", // ARM Homebrew
 }
 
@@ -97,6 +100,7 @@ func DefaultConfig() *Config {
 		Route: RouteConfig{
 			SetDefaultRoute: true,
 			RouteMetric:     100,
+			InterfaceOnly:   false,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",

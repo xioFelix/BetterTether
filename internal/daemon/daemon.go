@@ -26,7 +26,7 @@ type Daemon struct {
 	wg        sync.WaitGroup
 	startTime time.Time
 
-	mu         sync.Mutex
+	mu          sync.Mutex
 	activeRelay *Relay
 
 	plistPath string
@@ -114,16 +114,24 @@ func (d *Daemon) Run() error {
 				log.Info().Str("component", "daemon").Str("mtu", mtuStr).Msg("✨ Network auto-configured! Ping should now work natively!")
 
 				// Inject default route if configured
-				if d.cfg.Route.SetDefaultRoute {
+				if d.cfg.Route.InterfaceOnly {
+					if err := iface.SetScopedDefaultRoute(gateway); err != nil {
+						log.Warn().Str("component", "daemon").Err(err).Msg("Failed to set scoped default route")
+					} else {
+						log.Info().Str("component", "daemon").Str("interface", iface.Name()).Msg("Interface-only mode: scoped route ready; leaving system routes and DNS to the network manager")
+					}
+				} else if d.cfg.Route.SetDefaultRoute {
 					log.Info().Str("component", "daemon").Msg("Rerouting all system traffic through BetterTether...")
 					if err := iface.SetDefaultRoute(gateway); err != nil {
 						log.Warn().Str("component", "daemon").Err(err).Msg("Failed to set default route")
-					}
-
-					// Set DNS to Google (Primary) and phone gateway (Secondary)
-					log.Info().Str("component", "daemon").Msg("Setting system DNS to 8.8.8.8 (Google)...")
-					if err := iface.SetDNS([]string{"8.8.8.8", gateway}); err != nil {
-						log.Warn().Str("component", "daemon").Err(err).Msg("Failed to set DNS")
+					} else {
+						// Do not change system DNS if routing failed. Otherwise
+						// another network manager could resolve through the phone
+						// while its traffic still uses a different interface.
+						log.Info().Str("component", "daemon").Msg("Setting system DNS to 8.8.8.8 (Google)...")
+						if err := iface.SetDNS([]string{"8.8.8.8", gateway}); err != nil {
+							log.Warn().Str("component", "daemon").Err(err).Msg("Failed to set DNS")
+						}
 					}
 				}
 			}
@@ -208,12 +216,13 @@ func (d *Daemon) getRelayStats() *api.RelayStats {
 	r.mu.Unlock()
 
 	return &api.RelayStats{
-		Connected:   true,
-		SentBytes:   sent,
-		RecvBytes:   recv,
-		ConnectedAt: ct.Format(time.RFC3339),
-		ClientIP:    clientIP,
-		PhoneMAC:    phoneMAC,
+		Connected:     true,
+		InterfaceName: r.tun.Name(),
+		SentBytes:     sent,
+		RecvBytes:     recv,
+		ConnectedAt:   ct.Format(time.RFC3339),
+		ClientIP:      clientIP,
+		PhoneMAC:      phoneMAC,
 	}
 }
 
