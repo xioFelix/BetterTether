@@ -25,6 +25,8 @@ BetterTether is a lightweight userspace daemon that brings high-performance USB 
 
 ## macOS 15+ (Tahoe) Compatibility Guide
 
+For use with Surge Mac Enhanced Mode, see [Using BetterTether beneath Surge](docs/SURGE.md).
+
 macOS 15 introduces a strict "System Trust" model for network interfaces. BetterTether operates within these boundaries, leading to a split-networking experience:
 
 ### Works Out-of-the-Box (Independent Apps)

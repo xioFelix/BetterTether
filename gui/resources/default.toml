@@ -57,6 +57,11 @@ retry_delay_ms = 1000
 # Set to false if you only want the interface up without rerouting all traffic
 set_default_route = true
 
+# For Surge Enhanced Mode: expose the utun with its scoped default route,
+# but do not inject /1 routes or replace system DNS. Bind Surge egress
+# policies to the current utunN interface and enable Surge Enhanced Mode.
+interface_only = false
+
 # Metric for the injected default route (lower = preferred)
 route_metric = 100
 

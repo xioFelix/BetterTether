@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -11,18 +13,24 @@ import (
 
 // utun configuration constants for macOS
 const (
-	AF_SYSTEM              = 32
-	SYSPROTO_CONTROL       = 2
-	AF_SYS_CONTROL         = 2
-	UTUN_CONTROL_NAME      = "com.apple.net.utun_control"
-	droidTetherServiceID   = "BetterTether"
+	AF_SYSTEM            = 32
+	SYSPROTO_CONTROL     = 2
+	AF_SYS_CONTROL       = 2
+	UTUN_CONTROL_NAME    = "com.apple.net.utun_control"
+	droidTetherServiceID = "BetterTether"
 )
 
 // utunInterface implements Interface for Darwin using AF_SYSTEM.
 type utunInterface struct {
-	f       *os.File
-	name    string
-	address string // local IP assigned via Configure
+	f                *os.File
+	name             string
+	address          string // local IP assigned via Configure
+	mu               sync.Mutex
+	closed           bool
+	routesAdded      [2]bool
+	scopedRouteAdded bool
+	scopedGateway    string
+	dnsSet           bool
 }
 
 func (i *utunInterface) Read(p []byte) (n int, err error) {
@@ -34,31 +42,88 @@ func (i *utunInterface) Write(p []byte) (n int, err error) {
 }
 
 func (i *utunInterface) Close() error {
-	// Cleanup routes we added
-	_ = exec.Command("route", "delete", "-net", "0.0.0.0/1").Run()
-	_ = exec.Command("route", "delete", "-net", "128.0.0.0/1").Run()
-
-	// Cleanup network state we added
-	cmd := exec.Command("scutil")
-	stdin, _ := cmd.StdinPipe()
-	go func() {
-		defer stdin.Close()
-		fmt.Fprintln(stdin, "open")
-		// Reset global IPv4 so macOS recomputes from remaining services
-		fmt.Fprintln(stdin, "d.init")
-		fmt.Fprintln(stdin, "set State:/Network/Global/IPv4")
-		// Reset global DNS
-		fmt.Fprintln(stdin, "d.init")
-		fmt.Fprintln(stdin, "set State:/Network/Global/DNS")
-		// Remove per-service entries
-		fmt.Fprintf(stdin, "remove State:/Network/Service/%s/DNS\n", droidTetherServiceID)
-		fmt.Fprintf(stdin, "remove State:/Network/Service/%s/IPv4\n", droidTetherServiceID)
-		fmt.Fprintf(stdin, "remove State:/Network/Service/%s/Interface\n", droidTetherServiceID)
-		fmt.Fprintln(stdin, "quit")
-	}()
-	_ = cmd.Run()
-
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return nil
+	}
+	i.closed = true
+	if i.scopedRouteAdded && scopedRouteBelongsTo(i.name, i.scopedGateway) {
+		_ = exec.Command("route", "delete", "-net", "-ifscope", i.name, "default", i.scopedGateway).Run()
+	}
+	for n, prefix := range [...]string{"0.0.0.0/1", "128.0.0.0/1"} {
+		if i.routesAdded[n] && routeBelongsTo(prefix, i.name) {
+			_ = exec.Command("route", "delete", "-net", prefix).Run()
+		}
+	}
+	if i.dnsSet {
+		var script strings.Builder
+		script.WriteString("open\n")
+		// Other network managers may have replaced either global key. Never
+		// overwrite their state with an empty dictionary on disconnect.
+		if dynamicStoreContains("State:/Network/Global/IPv4", "PrimaryService : "+droidTetherServiceID) {
+			script.WriteString("remove State:/Network/Global/IPv4\n")
+		}
+		if dynamicStoreContains("State:/Network/Global/DNS", "__CONFIGURATION_ID__ : Supplemental: "+droidTetherServiceID) {
+			script.WriteString("remove State:/Network/Global/DNS\n")
+		}
+		for _, kind := range [...]string{"DNS", "IPv4", "Interface"} {
+			fmt.Fprintf(&script, "remove State:/Network/Service/%s/%s\n", droidTetherServiceID, kind)
+		}
+		script.WriteString("quit\n")
+		cmd := exec.Command("scutil")
+		cmd.Stdin = strings.NewReader(script.String())
+		_ = cmd.Run()
+	}
 	return i.f.Close()
+}
+
+func routeBelongsTo(prefix, interfaceName string) bool {
+	out, err := exec.Command("route", "-n", "get", "-net", prefix).CombinedOutput()
+	return err == nil && routeOutputBelongsTo(string(out), prefix, interfaceName)
+}
+
+func routeOutputBelongsTo(output, prefix, interfaceName string) bool {
+	wantDestination := "default"
+	if prefix == "128.0.0.0/1" {
+		wantDestination = "128.0.0.0"
+	}
+	var destination, mask, netif string
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "destination":
+			destination = strings.TrimSpace(value)
+		case "mask":
+			mask = strings.TrimSpace(value)
+		case "interface":
+			netif = strings.TrimSpace(value)
+		}
+	}
+	return destination == wantDestination && mask == "128.0.0.0" && netif == interfaceName
+}
+
+func scopedRouteBelongsTo(interfaceName, gateway string) bool {
+	out, err := exec.Command("route", "-n", "get", "-ifscope", interfaceName, "1.1.1.1").CombinedOutput()
+	return err == nil && scopedRouteOutputBelongsTo(string(out), interfaceName, gateway)
+}
+
+func scopedRouteOutputBelongsTo(output, interfaceName, gateway string) bool {
+	return strings.Contains(output, "destination: default\n") &&
+		strings.Contains(output, "mask: default\n") &&
+		strings.Contains(output, "gateway: "+gateway+"\n") &&
+		strings.Contains(output, "interface: "+interfaceName+"\n") &&
+		strings.Contains(output, "IFSCOPE")
+}
+
+func dynamicStoreContains(key, value string) bool {
+	cmd := exec.Command("scutil")
+	cmd.Stdin = strings.NewReader("show " + key + "\nquit\n")
+	out, err := cmd.CombinedOutput()
+	return err == nil && strings.Contains(string(out), value)
 }
 func (i *utunInterface) Name() string {
 	return i.name
@@ -66,6 +131,11 @@ func (i *utunInterface) Name() string {
 
 // Configure sets the IP addresses and MTU for the utun interface using the 'ifconfig' command.
 func (i *utunInterface) Configure(localIP, remoteIP, mtu string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return fmt.Errorf("utun: cannot configure after close")
+	}
 	i.address = localIP
 	// Formula: ifconfig <name> <local> <remote> mtu <val> up
 	cmd := exec.Command("ifconfig", i.name, localIP, remoteIP, "mtu", mtu, "up")
@@ -78,18 +148,69 @@ func (i *utunInterface) Configure(localIP, remoteIP, mtu string) error {
 // SetDefaultRoute adds "more specific" default routes (0.0.0.0/1 and 128.0.0.0/1)
 // to override the existing default route without deleting it.
 func (i *utunInterface) SetDefaultRoute(gateway string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return fmt.Errorf("utun: cannot add routes after close")
+	}
+	if i.routesAdded[0] && i.routesAdded[1] {
+		return nil
+	}
 	// 0.0.0.0/1
 	cmd1 := exec.Command("route", "add", "-net", "0.0.0.0/1", "-interface", i.name)
 	if out, err := cmd1.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to add 0/1 route: %w (output: %s)", err, string(out))
 	}
+	i.routesAdded[0] = true
 
 	// 128.0.0.0/1
 	cmd2 := exec.Command("route", "add", "-net", "128.0.0.0/1", "-interface", i.name)
 	if out, err := cmd2.CombinedOutput(); err != nil {
+		if routeBelongsTo("0.0.0.0/1", i.name) {
+			_ = exec.Command("route", "delete", "-net", "0.0.0.0/1").Run()
+		}
+		i.routesAdded[0] = false
 		return fmt.Errorf("failed to add 128/1 route: %w (output: %s)", err, string(out))
 	}
+	i.routesAdded[1] = true
 
+	return nil
+}
+
+// SetScopedDefaultRoute makes the phone usable by an explicitly bound Surge
+// policy without competing with Surge's system-wide VIF default route.
+func (i *utunInterface) SetScopedDefaultRoute(gateway string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return fmt.Errorf("utun: cannot add scoped route after close")
+	}
+	// A previous daemon may have been killed before it could remove its /1
+	// routes. This utun belongs to our current session, so clear those stale
+	// routes before letting Surge's VIF take the unscoped default route.
+	for _, prefix := range [...]string{"0.0.0.0/1", "128.0.0.0/1"} {
+		if routeBelongsTo(prefix, i.name) {
+			if out, err := exec.Command("route", "delete", "-net", prefix).CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to remove stale %s route: %w (output: %s)", prefix, err, string(out))
+			}
+		}
+	}
+	if i.scopedRouteAdded {
+		return nil
+	}
+	if scopedRouteBelongsTo(i.name, gateway) {
+		// Adopt a matching scoped route left by an interrupted session so it
+		// is removed when this utun closes.
+		i.scopedRouteAdded = true
+		i.scopedGateway = gateway
+		return nil
+	}
+	cmd := exec.Command("route", "add", "-net", "-ifscope", i.name, "default", gateway)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to add scoped default route: %w (output: %s)", err, string(out))
+	}
+	i.scopedRouteAdded = true
+	i.scopedGateway = gateway
 	return nil
 }
 
@@ -98,6 +219,11 @@ func (i *utunInterface) SetDefaultRoute(gateway string) error {
 // PrimaryService and PrimaryInterface so that macOS SCNetworkReachability
 // reports the system as online — fixing Safari, App Store, and system updates.
 func (i *utunInterface) SetDNS(dnsServers []string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return fmt.Errorf("utun: cannot set DNS after close")
+	}
 	if len(dnsServers) == 0 {
 		return nil
 	}
@@ -166,6 +292,7 @@ func (i *utunInterface) SetDNS(dnsServers []string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("scutil network setup failed: %w (output: %s)", err, string(out))
 	}
+	i.dnsSet = true
 
 	return nil
 }

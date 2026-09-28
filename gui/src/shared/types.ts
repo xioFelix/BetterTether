@@ -7,6 +7,7 @@ export interface TrafficStats {
 
 export interface RelayStats {
   connected: boolean
+  interfaceName?: string
   phoneMAC: string
   clientIP: string
   connectedAt: string

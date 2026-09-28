@@ -305,7 +305,7 @@ async function installAndBootstrapDaemon(): Promise<void> {
 
   let cpConfig = ''
   if (existsSync(configRes)) {
-    cpConfig = `mkdir -p /etc/bettertether && cp -f '${configRes}' /etc/bettertether/bettertether.toml &&`
+    cpConfig = `mkdir -p /etc/bettertether && if [ ! -f /etc/bettertether/bettertether.toml ]; then cp '${configRes}' /etc/bettertether/bettertether.toml; fi &&`
   }
 
   let cpUninstall = ''
@@ -414,6 +414,7 @@ async function fetchStatus(): Promise<DaemonStatus> {
     const relay = relayData
       ? {
           connected: relayData.connected ?? relayData.connected ?? false,
+          interfaceName: relayData.interfaceName ?? relayData.interface_name ?? '',
           sentBytes: relayData.sentBytes ?? relayData.sent_bytes ?? 0,
           recvBytes: relayData.recvBytes ?? relayData.recv_bytes ?? 0,
           sentRate,
@@ -628,7 +629,7 @@ function buildTrayContextMenu() {
   ])
 }
 
-function createTrayIcon(): nativeImage.NativeImage {
+function createTrayIcon() {
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'tray-icon.png')
     : join(__dirname, '../../resources/tray-icon.png')
