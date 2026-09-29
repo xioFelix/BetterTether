@@ -25,6 +25,10 @@ BetterTether is a lightweight userspace daemon that brings high-performance USB 
 
 ## macOS 15+ (Tahoe) Compatibility Guide
 
+An experimental native USB Ethernet path is available for tested Android NCM devices:
+[Native NCM setup and recovery](docs/NATIVE-NCM.md). It uses macOS's built-in
+Ethernet driver and runs with the BetterTether RNDIS relay stopped.
+
 macOS 15 introduces a strict "System Trust" model for network interfaces. BetterTether operates within these boundaries, leading to a split-networking experience:
 
 ### Works Out-of-the-Box (Independent Apps)

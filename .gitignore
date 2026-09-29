@@ -17,6 +17,7 @@
 /vendor/
 *.test
 *.prof
+__pycache__/
 
 # Logs
 *.log
