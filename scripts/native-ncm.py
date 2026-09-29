@@ -13,8 +13,10 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
-HELPER = REPO / 'build/ncm-helper/native-tether.jar'
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO = SCRIPT_DIR.parent
+PORTABLE_HELPER = SCRIPT_DIR / 'native-tether.jar'
+HELPER = PORTABLE_HELPER if PORTABLE_HELPER.is_file() else REPO / 'build/ncm-helper/native-tether.jar'
 LABEL = 'system/com.s4wbvnny.bettertether'
 ADB = shutil.which('adb') or '/opt/homebrew/bin/adb'
 

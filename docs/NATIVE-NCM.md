@@ -42,6 +42,8 @@ USB 拔插、手机重启或再次点击手机“USB 网络共享”可能让手
 
 `python3 scripts/native-ncm.py status` 可查看当前原生网卡是否已取得 DHCP 网关及系统默认路由。
 
+启动脚本可以脱离源码仓库使用：将 `native-ncm.py` 与已构建的 `native-tether.jar` 放在同一文件夹中，再从其他目录调用该 Python 脚本即可。它会优先使用脚本旁的 JAR。当前 Mac 的文稿目录已有这样一套独立副本。
+
 ## 从源码构建辅助程序
 
 需要 ADB、Python 3、JDK。默认 JDK 路径为 Apple Silicon Homebrew 的 OpenJDK；其他路径通过 `JAVA_BIN_DIR` 指定。
