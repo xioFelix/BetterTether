@@ -10,6 +10,7 @@
 - Surge 的网络摘要显示 `Primary interface type: Wired`、接口 `en12`。
 - 使用原有 `Surge-Mini` 配置，开启系统代理、关闭增强模式，测试成功。
 - 关闭 Mac Wi-Fi 后，直连 Apple 网站及通过 Surge 代理访问 Google 均为 HTTP 200。测试前后确认 Wi-Fi 均为 Off，默认路由为 `en12`。测试完成后恢复了 Wi-Fi。
+- 从手机“文件传输”模式重新运行连接脚本，再次取得 NCM DHCP 网关、USB 直连 HTTP 200；复测 Mac Wi-Fi 关闭时，原 Surge 配置的代理请求正常完成（Google 返回地区跳转 HTTP 302）。
 
 地址和接口编号不是固定值。以上是一次设备实测，不代表所有 Android 厂商或固件都兼容。
 
